@@ -95,8 +95,75 @@ exports.getAllReservations = getAllReservations;
  * @return {Promise<[{}]>}  A promise to the properties.
  */
 const getAllProperties = (options, limit = 10) => {
+  const queryParams = [];
+  let queryString = `
+  SELECT properties.*, AVG(rating) as average_rating 
+  FROM properties 
+  JOIN property_reviews ON properties.id = property_id
+  `;
+
+  //define potential variable options
+  const maxPriceSearchVal = options.maximum_price_per_night * 100;
+  const minPriceSearchVal = options.minimum_price_per_night * 100;
+  const ownerIdVar = options.owner_id;
+  const minRating = options.minimum_rating;
+
+  //if city name was passed into search params
+  if (options.city) {
+    queryParams.push(`%${options.city}%`)
+    queryString += `WHERE city LIKE $${queryParams.length}`;
+  }
+  //owner id is passed
+  if (ownerIdVar && queryParams.length === 0) {
+    queryParams.push(`%${ownerIdVar}%`)
+    queryString += `WHERE owner_id = $${queryParams.length}`;
+  } else if (ownerIdVar) {
+    queryParams.push(`%${ownerIdVar}%`)
+    queryString += ` AND owner_id = $${queryParams.length}`;
+  }
+  //max price options
+  if (maxPriceSearchVal && queryParams.length === 0) {
+    queryParams.push(`${maxPriceSearchVal}`)
+    queryString += `WHERE cost_per_night < $${queryParams.length}`;
+  } else if (maxPriceSearchVal) {
+    queryParams.push(`${maxPriceSearchVal}`)
+    queryString += ` AND cost_per_night < $${queryParams.length}`;
+  }
+  // min price option
+  if (minPriceSearchVal && queryParams.length === 0) {
+    queryParams.push(`${minPriceSearchVal}`)
+    queryString += `WHERE cost_per_night > $${queryParams.length}`;
+  } else if (minPriceSearchVal) {
+    queryParams.push(`${minPriceSearchVal}`)
+    queryString += ` AND cost_per_night > $${queryParams.length}`;
+  }
+  // min rating option
+  if (minRating) {
+    queryParams.push(`${minRating}`)
+    queryString += `GROUP BY properties.id
+    HAVING AVG(rating) >= $${queryParams.length}`;
+  }
+
+  // append limit to search
+  queryParams.push(limit);
+  if (!minRating) {
+    queryString += `
+      GROUP BY properties.id
+      ORDER BY cost_per_night
+      LIMIT $${queryParams.length};
+      `;
+  } else {
+    queryString += `
+      ORDER BY cost_per_night
+      LIMIT $${queryParams.length};
+      `;
+  }
+  //check if things are right
+  console.log(queryString, queryParams);
+
+
   return pool
-  .query(`SELECT * FROM properties LIMIT $1;`, [limit])
+  .query(queryString, queryParams)
   .then(res => res.rows)
   .catch(err => {
     console.log(err.message);
